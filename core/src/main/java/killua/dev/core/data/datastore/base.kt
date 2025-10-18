@@ -1,4 +1,4 @@
-package killua.dev.core.datastore
+package killua.dev.core.data.datastore
 
 import android.content.Context
 import androidx.datastore.core.DataStore
