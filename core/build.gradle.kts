@@ -34,15 +34,25 @@ android {
     kotlinOptions {
         jvmTarget = "11"
     }
+    buildFeatures {
+        compose = true
+    }
 }
 
 dependencies {
-    implementation("androidx.work:work-runtime-ktx:2.10.5")
-    implementation("androidx.work:work-multiprocess:2.10.5")
+    implementation(libs.androidx.startup.runtime)
+    implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.androidx.work.multiprocess)
     implementation(libs.logcat)
 
     implementation(libs.hilt.android)
     implementation(libs.androidx.hilt.common)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.activity.compose)
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.ui.test.junit4)
+    debugImplementation(libs.androidx.ui.tooling)
+    debugImplementation(libs.androidx.ui.test.manifest)
     ksp(libs.hilt.android.compiler)
     implementation(libs.androidx.hilt.navigation.compose)
     implementation(libs.androidx.hilt.work)
