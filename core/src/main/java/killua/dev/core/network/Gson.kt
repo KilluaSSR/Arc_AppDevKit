@@ -6,10 +6,6 @@ import com.google.gson.JsonParser
 import com.google.gson.reflect.TypeToken
 import java.lang.reflect.Type
 
-/**
- * 全局单例 Gson 解析器
- * 提供统一的 JSON 序列化和反序列化功能
- */
 object GsonParser {
     
     /**

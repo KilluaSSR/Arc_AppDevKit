@@ -26,7 +26,7 @@ class StartupViewModel @Inject constructor(
     }
     
     init {
-        logcat(TAG, LogPriority.INFO) { "ViewModel initialized" }
+        logcat(TAG, LogPriority.INFO) { "$TAG initialized" }
     }
     
     override suspend fun onEvent(state: StartupState, intent: StartupIntent) {
@@ -43,7 +43,7 @@ class StartupViewModel @Inject constructor(
     private suspend fun handleInitialize() {
         logcat(TAG, LogPriority.INFO) { "Starting initialization sequence" }
         
-        updateState { it.copy(isLoading = true, error = null) }
+        updateState { it.copy(error = null) }
         
         if (startupConfig.permissions.isNotEmpty()) {
             logcat(TAG, LogPriority.DEBUG) { 
@@ -82,7 +82,6 @@ class StartupViewModel @Inject constructor(
             }
             updateState { 
                 it.copy(
-                    isLoading = false,
                     error = StartupError.PermissionDenied(deniedRequiredPermissions)
                 )
             }
@@ -127,8 +126,6 @@ class StartupViewModel @Inject constructor(
     private suspend fun executeTasks() {
         logcat(TAG, LogPriority.INFO) { "Executing UI-required startup tasks" }
         
-        updateState { it.copy(isLoading = true) }
-        
         launchOnIO {
             val context = startupConfig.applicationContext
 
@@ -140,7 +137,6 @@ class StartupViewModel @Inject constructor(
                 }
                 updateState { 
                     it.copy(
-                        isLoading = false,
                         initializationComplete = true,
                         progress = 1.0f
                     )
@@ -177,7 +173,6 @@ class StartupViewModel @Inject constructor(
                     logcat(TAG, LogPriority.INFO) { "Initialization complete" }
                     updateState { 
                         it.copy(
-                            isLoading = false,
                             initializationComplete = true,
                             completedTasks = result.completedTasks
                         )
@@ -193,7 +188,6 @@ class StartupViewModel @Inject constructor(
                     )
                     updateState { 
                         it.copy(
-                            isLoading = false,
                             error = error
                         )
                     }

@@ -1,12 +1,13 @@
 package killua.dev.core.init
 
+import killua.dev.core.states.CurrentState
 import killua.dev.core.viewmodel.UIEffect
 import killua.dev.core.viewmodel.UIIntent
 import killua.dev.core.viewmodel.UIState
 
 
 data class StartupState(
-    val isLoading: Boolean = true,
+    val currentState: CurrentState = CurrentState.Idle,
     val progress: Float = 0f,
     val currentTask: String = "",
     val consentFormLoaded: Boolean = false,
@@ -15,6 +16,14 @@ data class StartupState(
     val error: StartupError? = null,
     val completedTasks: List<String> = emptyList()
 ) : UIState {
+    
+    val derivedCurrentState: CurrentState
+        get() = when {
+            error != null -> CurrentState.Error
+            initializationComplete -> CurrentState.Success
+            progress > 0f -> CurrentState.Processing
+            else -> CurrentState.Idle
+        }
     
     val canContinue: Boolean
         get() = consentFormLoaded && 
