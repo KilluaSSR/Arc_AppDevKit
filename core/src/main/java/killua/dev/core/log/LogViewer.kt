@@ -1,63 +1,55 @@
 package killua.dev.core.log
 
+import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import killua.dev.core.log.domain.LogExportFormat
+import killua.dev.core.log.domain.LogFilter
 
 /**
  * 日志查看器入口
- * 直接在 Composable 中调用即可显示日志查看器
+ * 提供高级API用于日志查看和管理
  */
 object LogViewer {
-    
-    /**
-     * 显示日志查看器
-     * 
-     * @param modifier Modifier
-     * @param onBack 返回按钮回调
-     */
+
     @Composable
     fun Show(
         modifier: Modifier = Modifier,
-        onBack: (() -> Unit)? = null
+        onBack: (() -> Unit)? = null,
+        context: Context? = null
     ) {
+        val service = context?.let { LogcatCaptureServiceProxy.getInstance(it) }
         LogViewerScreen(
             modifier = modifier,
-            onBack = onBack ?: {}
+            onBack = onBack ?: {},
+            logService = service
         )
     }
-    
-    /**
-     * 开始捕获日志
-     */
-    fun startCapture() {
-        LogcatCaptureService.startCapture()
+
+    fun startCapture(context: Context) {
+        LogcatCaptureServiceProxy.getInstance(context).startCapture()
     }
-    
-    /**
-     * 停止捕获日志
-     */
-    fun stopCapture() {
-        LogcatCaptureService.stopCapture()
+
+    fun stopCapture(context: Context) {
+        LogcatCaptureServiceProxy.getInstance(context).stopCapture()
     }
-    
-    /**
-     * 清除日志
-     */
-    fun clearLogs() {
-        LogcatCaptureService.clearLogs()
+
+    suspend fun clearLogs(context: Context) {
+        LogcatCaptureServiceProxy.getInstance(context).clearLogs()
     }
-    
-    /**
-     * 是否正在捕获
-     */
-    fun isCapturing(): Boolean {
-        return LogcatCaptureService.isCapturing()
+
+    fun isCapturing(context: Context): Boolean {
+        return LogcatCaptureServiceProxy.getInstance(context).isCapturing()
     }
-    
-    /**
-     * 获取日志数量
-     */
-    fun getLogCount(): Int {
-        return LogcatCaptureService.getLogCount()
-    }
+
+    suspend fun exportLogs(
+        context: Context,
+        format: LogExportFormat = LogExportFormat.TXT,
+        share: Boolean = true
+    ) = LogcatCaptureServiceProxy.getInstance(context).exportLogs(format, share)
+
+    fun getFilteredLogs(
+        context: Context,
+        filter: LogFilter = LogFilter.ALL
+    ) = LogcatCaptureServiceProxy.getInstance(context).getFilteredLogs(filter)
 }

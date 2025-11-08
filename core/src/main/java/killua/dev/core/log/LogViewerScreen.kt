@@ -1,5 +1,10 @@
 package killua.dev.core.log
 
+import android.os.Build
+import androidx.annotation.RequiresApi
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -10,6 +15,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -18,6 +24,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Pause
@@ -29,10 +36,13 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -52,47 +62,53 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import killua.dev.core.log.domain.LogEntry
+import killua.dev.core.log.domain.LogExportFormat
+import killua.dev.core.log.domain.LogFilter
+import killua.dev.core.log.domain.LogLevel
+import kotlinx.coroutines.launch
 
-
+@RequiresApi(Build.VERSION_CODES.O)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LogViewerScreen(
     modifier: Modifier = Modifier,
-    onBack: () -> Unit = {}
+    onBack: () -> Unit = {},
+    logService: LogcatCaptureService? = null
 ) {
-    val logs by LogcatCaptureService.logs.collectAsState()
+    val logs by (logService?.logs ?: kotlinx.coroutines.flow.MutableStateFlow(emptyList<LogEntry>())).collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     var showFilterDialog by remember { mutableStateOf(false) }
-    var selectedPriority by remember { mutableStateOf("全部") }
+    var showExportDialog by remember { mutableStateOf(false) }
+    var selectedPriority by remember { mutableStateOf(LogLevel.ALL) }
     var autoScroll by remember { mutableStateOf(true) }
     var expandedLog by remember { mutableStateOf<LogEntry?>(null) }
-    
-    val filteredLogs = remember(logs, searchQuery, selectedPriority) {
-        logs.filter { log ->
-            val matchesSearch = searchQuery.isEmpty() || 
-                log.message.contains(searchQuery, ignoreCase = true) ||
-                log.tag.contains(searchQuery, ignoreCase = true)
-            
-            val matchesPriority = selectedPriority == "全部" || log.priority == selectedPriority
-            
-            matchesSearch && matchesPriority
-        }
-    }
-    
-    val listState = rememberLazyListState()
+    var isExporting by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
-    
+  
+    val currentFilter = remember(searchQuery, selectedPriority) {
+        LogFilter(
+            query = searchQuery,
+            selectedLevel = selectedPriority
+        )
+    }
+
+    val filteredLogs = remember(logs, currentFilter) {
+        logs.filter { currentFilter.matches(it) }
+    }
+  
+    val listState = rememberLazyListState()
+
     // 自动滚动到底部
     LaunchedEffect(filteredLogs.size, autoScroll) {
         if (autoScroll && filteredLogs.isNotEmpty()) {
             listState.animateScrollToItem(filteredLogs.size - 1)
         }
     }
-    
+
     LaunchedEffect(Unit) {
-        if (!LogcatCaptureService.isCapturing()) {
-            LogcatCaptureService.startCapture()
-        }
+        logService?.startCapture()
     }
     
     DisposableEffect(Unit) {
@@ -134,18 +150,28 @@ fun LogViewerScreen(
                     // 过滤器
                     IconButton(onClick = { showFilterDialog = true }) {
                         Badge(
-                            containerColor = if (selectedPriority != "全部") 
+                            containerColor = if (selectedPriority != LogLevel.ALL)
                                 MaterialTheme.colorScheme.primary else Color.Transparent
                         ) {
                             Icon(Icons.Default.FilterList, "过滤")
                         }
                     }
                     
+                    // 导出日志
+                    IconButton(
+                        onClick = { showExportDialog = true },
+                        enabled = logs.isNotEmpty()
+                    ) {
+                        Icon(Icons.Default.Download, "导出")
+                    }
+
                     // 清除日志
-                    IconButton(onClick = { 
-                        LogcatCaptureService.clearLogs()
-                        searchQuery = ""
-                        selectedPriority = "全部"
+                    IconButton(onClick = {
+                        coroutineScope.launch {
+                            logService?.clearLogs()
+                            searchQuery = ""
+                            selectedPriority = LogLevel.ALL
+                        }
                     }) {
                         Icon(Icons.Default.Clear, "清除")
                     }
@@ -178,7 +204,7 @@ fun LogViewerScreen(
             )
             
             // 过滤提示
-            if (selectedPriority != "全部" || searchQuery.isNotEmpty()) {
+            if (selectedPriority != LogLevel.ALL || searchQuery.isNotEmpty()) {
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -198,16 +224,16 @@ fun LogViewerScreen(
                         )
                         Text(
                             text = buildString {
-                                if (selectedPriority != "全部") append("优先级: $selectedPriority  ")
+                                if (selectedPriority != LogLevel.ALL) append("优先级: ${selectedPriority.displayName}  ")
                                 if (searchQuery.isNotEmpty()) append("搜索: \"$searchQuery\"")
                             },
                             style = MaterialTheme.typography.bodySmall
                         )
                         Spacer(Modifier.weight(1f))
                         TextButton(
-                            onClick = { 
+                            onClick = {
                                 searchQuery = ""
-                                selectedPriority = "全部"
+                                selectedPriority = LogLevel.ALL
                             }
                         ) {
                             Text("清除筛选", style = MaterialTheme.typography.bodySmall)
@@ -247,17 +273,28 @@ fun LogViewerScreen(
                     }
                 }
             } else {
+                // 导出进度指示器
+                AnimatedVisibility(
+                    visible = isExporting,
+                    enter = fadeIn(),
+                    exit = fadeOut()
+                ) {
+                    LinearProgressIndicator(
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
                 // 日志列表
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(8.dp)
                 ) {
-                    items(filteredLogs, key = { it.fullLog + it.timestamp }) { log ->
+                    items(filteredLogs, key = { log -> log.fullLog + log.timestamp }) { log ->
                         LogItem(
                             log = log,
                             isExpanded = expandedLog == log,
-                            onClick = { 
+                            onClick = {
                                 expandedLog = if (expandedLog == log) null else log
                             }
                         )
@@ -266,21 +303,51 @@ fun LogViewerScreen(
                 }
             }
         }
-        
+          SnackbarHost(hostState = snackbarHostState)
+
         // 过滤对话框
         if (showFilterDialog) {
             FilterDialog(
                 selectedPriority = selectedPriority,
-                onPrioritySelected = { 
+                onPrioritySelected = {
                     selectedPriority = it
                     showFilterDialog = false
                 },
                 onDismiss = { showFilterDialog = false }
             )
         }
+
+        // 导出对话框
+        if (showExportDialog) {
+            ExportDialog(
+                onDismiss = { showExportDialog = false },
+                onExport = { format, share ->
+                    coroutineScope.launch {
+                        isExporting = true
+                        try {
+                            logService?.exportLogs(format, share)?.fold(
+                                onSuccess = {
+                                    snackbarHostState.showSnackbar(
+                                        "导出成功: $it"
+                                    )
+                                },
+                                onFailure = { error ->
+                                    snackbarHostState.showSnackbar(
+                                        "导出失败: ${error.message}"
+                                    )
+                                }
+                            )
+                        } finally {
+                            isExporting = false
+                            showExportDialog = false
+                        }
+                    }
+                }
+            )
+        }
     }
 }
-
+@RequiresApi(Build.VERSION_CODES.O)
 @Composable
 fun LogItem(
     log: LogEntry,
@@ -291,12 +358,7 @@ fun LogItem(
         modifier = Modifier
             .fillMaxWidth()
             .background(
-                color = when (log.priority) {
-                    "E" -> Color(0xFFFFEBEE)
-                    "W" -> Color(0xFFFFF3E0)
-                    "I" -> Color(0xFFE3F2FD)
-                    else -> Color.Transparent
-                }
+                color = log.level.getBackgroundColor()
             )
             .clickable(onClick = onClick)
             .padding(8.dp)
@@ -307,15 +369,15 @@ fun LogItem(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = log.timestamp,
+                text = log.displayTimestamp,
                 fontSize = 10.sp,
                 color = Color.Gray,
                 fontFamily = FontFamily.Monospace
             )
-            
-            PriorityChip(log.priority)
+
+            PriorityChip(log.level.priority)
         }
-        
+
         Text(
             text = log.tag,
             fontSize = 12.sp,
@@ -323,7 +385,7 @@ fun LogItem(
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.padding(vertical = 2.dp)
         )
-        
+
         Text(
             text = log.message,
             fontSize = 12.sp,
@@ -331,7 +393,7 @@ fun LogItem(
             modifier = Modifier.padding(top = 4.dp),
             maxLines = if (isExpanded) Int.MAX_VALUE else 3
         )
-        
+
         if (isExpanded && log.message.length > 100) {
             Text(
                 text = if (isExpanded) "点击折叠" else "点击展开",
@@ -345,16 +407,9 @@ fun LogItem(
 
 @Composable
 fun PriorityChip(priority: String) {
-    val (color, backgroundColor) = when (priority) {
-        "V" -> Color.Gray to Color(0xFFF5F5F5)
-        "D" -> Color(0xFF2196F3) to Color(0xFFE3F2FD)
-        "I" -> Color(0xFF4CAF50) to Color(0xFFE8F5E9)
-        "W" -> Color(0xFFFF9800) to Color(0xFFFFF3E0)
-        "E" -> Color(0xFFF44336) to Color(0xFFFFEBEE)
-        "A" -> Color(0xFF9C27B0) to Color(0xFFF3E5F5)
-        else -> Color.Gray to Color(0xFFF5F5F5)
-    }
-    
+    val logLevel = LogLevel.fromPriority(priority)
+    val (color, backgroundColor) = logLevel.getColors()
+
     Surface(
         color = backgroundColor,
         shape = MaterialTheme.shapes.small,
@@ -372,8 +427,8 @@ fun PriorityChip(priority: String) {
 
 @Composable
 fun FilterDialog(
-    selectedPriority: String,
-    onPrioritySelected: (String) -> Unit,
+    selectedPriority: LogLevel,
+    onPrioritySelected: (LogLevel) -> Unit,
     onDismiss: () -> Unit
 ) {
     AlertDialog(
@@ -381,18 +436,7 @@ fun FilterDialog(
         title = { Text("过滤日志优先级") },
         text = {
             Column {
-                val priorities = listOf("ALL", "V", "D", "I", "W", "E", "A")
-                val priorityNames = mapOf(
-                    "ALL" to "All",
-                    "V" to "Verbose",
-                    "D" to "Debug",
-                    "I" to "Info",
-                    "W" to "Warning",
-                    "E" to "Error",
-                    "A" to "Assert"
-                )
-                
-                priorities.forEach { priority ->
+                LogLevel.entries.forEach { level ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -400,11 +444,11 @@ fun FilterDialog(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         RadioButton(
-                            selected = selectedPriority == priority,
-                            onClick = { onPrioritySelected(priority) }
+                            selected = selectedPriority == level,
+                            onClick = { onPrioritySelected(level) }
                         )
                         Text(
-                            text = "${priorityNames[priority]} ($priority)",
+                            text = "${level.displayName} (${level.priority})",
                             modifier = Modifier.padding(start = 8.dp)
                         )
                     }
@@ -414,6 +458,72 @@ fun FilterDialog(
         confirmButton = {
             TextButton(onClick = onDismiss) {
                 Text("确定")
+            }
+        }
+    )
+}
+
+@Composable
+fun ExportDialog(
+    onDismiss: () -> Unit,
+    onExport: (LogExportFormat, Boolean) -> Unit
+) {
+    var selectedFormat by remember { mutableStateOf(LogExportFormat.TXT) }
+    var shareFile by remember { mutableStateOf(true) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("导出日志") },
+        text = {
+            Column {
+                Text("选择导出格式:", style = MaterialTheme.typography.bodyMedium)
+
+                LogExportFormat.entries.forEach { format ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = selectedFormat == format,
+                            onClick = { selectedFormat = format }
+                        )
+                        Text(
+                            text = "${format.name} (.${format.extension})",
+                            modifier = Modifier.padding(start = 8.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(
+                        selected = shareFile,
+                        onClick = { shareFile = !shareFile }
+                    )
+                    Text(
+                        text = "导出后分享文件",
+                        modifier = Modifier.padding(start = 8.dp)
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onExport(selectedFormat, shareFile)
+                }
+            ) {
+                Text("导出")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
             }
         }
     )

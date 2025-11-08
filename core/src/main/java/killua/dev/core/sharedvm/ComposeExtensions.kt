@@ -19,19 +19,35 @@ fun <T> rememberSharedViewModel(key: String, factory: () -> T): T {
     val lifecycleOwner = LocalLifecycleOwner.current
     val activity = remember { context as? Activity }
 
-    val vm = remember { SharedViewModelRegistry.getOrCreate(key, factory) }
+    // Get or create VM with reference counting
+    val vm = remember(key) { SharedViewModelRegistry.getOrCreate(key, factory) }
 
-    DisposableEffect(lifecycleOwner) {
+    DisposableEffect(lifecycleOwner, key) {
         val observer = LifecycleEventObserver { source, event ->
-            if (event == Lifecycle.Event.ON_DESTROY) {
-                val shouldRelease = activity?.isFinishing ?: true
-                if (shouldRelease) SharedViewModelRegistry.release(key)
+            when (event) {
+                Lifecycle.Event.ON_DESTROY -> {
+                    // Only release if the activity is finishing (not just configuration change)
+                    val shouldRelease = when {
+                        activity == null -> true // No activity reference, release on destroy
+                        activity.isFinishing || activity.isDestroyed -> true
+                        else -> false
+                    }
+                    if (shouldRelease) {
+                        SharedViewModelRegistry.release(key)
+                    }
+                }
+                else -> {} // Handle other lifecycle events if needed
             }
         }
+
         lifecycleOwner.lifecycle.addObserver(observer)
+
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            SharedViewModelRegistry.release(key)
+            // Release when composable is disposed (but don't double-release if already released)
+            if (activity == null || activity.isFinishing) {
+                SharedViewModelRegistry.release(key)
+            }
         }
     }
 

@@ -1,30 +1,43 @@
 package killua.dev.core.sharedvm
 
-import android.app.Activity
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.LifecycleOwner
-import killua.dev.core.viewmodel.BaseViewModel
+import androidx.lifecycle.ViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import java.lang.ref.WeakReference
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 
 /**
  * Central registry managing shared ViewModel instances by key.
- * Instances are not stored in a ViewModelStore; registry keeps strong reference
- * while reference count > 0, and disposes when ref count reaches 0.
+ * Proper lifecycle management with reference counting and ViewModel integration.
  */
 object SharedViewModelRegistry {
+    // Interface for lifecycle callbacks to avoid reflection
+    interface LifecycleAware {
+        fun onFirstRef()
+        fun onLastRef()
+        fun dispose()
+    }
+
     private class Entry(
-        val vm: Any,
+        private val vmRef: WeakReference<Any>,
         initialCount: Int = 1
     ) {
         val refCount = AtomicInteger(initialCount)
         val destroyed = AtomicBoolean(false)
         val createdAt = System.currentTimeMillis()
+
+        // Get VM reference safely
+        fun getVm(): Any? = vmRef.get()
+
+        // Cleanup VM safely
+        fun cleanup() {
+            val vm = getVm()
+            if (vm is LifecycleAware) {
+                vm.dispose()
+            }
+        }
     }
 
     private val map = ConcurrentHashMap<String, Entry>()
@@ -47,51 +60,85 @@ object SharedViewModelRegistry {
     fun <T> getOrCreate(key: String, factory: () -> T): T {
         // Try fast path
         map[key]?.let { entry ->
-            entry.refCount.incrementAndGet()
-            updateDebugFlow()
-            return entry.vm as T
+            val vm = entry.getVm()
+            if (vm != null) {
+                entry.refCount.incrementAndGet()
+                updateDebugFlow()
+                return vm as T
+            } else {
+                // VM was GC'd, remove entry
+                map.remove(key)
+            }
         }
 
         // Create new entry atomically
         val entry = map.compute(key) { _, old ->
             if (old == null) {
                 val vm = factory() as Any
-                // call onFirstRef if available
+                val vmRef = WeakReference(vm)
+
+                // Call onFirstRef if available
                 try {
-                    vm::class.members.firstOrNull { it.name == "onFirstRef" }?.call(vm)
+                    if (vm is LifecycleAware) {
+                        vm.onFirstRef()
+                    }
                 } catch (_: Throwable) {
+                    // Ignore lifecycle callback errors
                 }
-                val e = Entry(vm, 1)
-                // map updated, refresh debug flow below
-                e
+
+                Entry(vmRef, 1)
             } else {
-                old.refCount.incrementAndGet()
-                old
+                // Existing entry found
+                val existingVm = old.getVm()
+                if (existingVm != null) {
+                    old.refCount.incrementAndGet()
+                    old
+                } else {
+                    // Old entry was GC'd, create new one
+                    val vm = factory() as Any
+                    val vmRef = WeakReference(vm)
+                    if (vm is LifecycleAware) {
+                        vm.onFirstRef()
+                    }
+                    Entry(vmRef, 1)
+                }
             }
         }!!
         updateDebugFlow()
-        return entry.vm as T
+
+        val resultVm = entry.getVm()
+        return resultVm as T
     }
 
     fun release(key: String) {
         val entry = map[key] ?: return
         val remain = entry.refCount.decrementAndGet()
         updateDebugFlow()
+
         if (remain <= 0) {
             // ensure only one thread destroys
             if (entry.destroyed.compareAndSet(false, true)) {
                 map.remove(key)
-                // attempt to call onLastRef then dispose if available
-                try {
-                    val vm = entry.vm
-                    vm::class.members.firstOrNull { it.name == "onLastRef" }?.call(vm)
-                } catch (_: Throwable) {
+
+                // Call lifecycle hooks before cleanup
+                val vm = entry.getVm()
+                if (vm != null) {
+                    try {
+                        if (vm is LifecycleAware) {
+                            vm.onLastRef()
+                        }
+                    } catch (_: Throwable) {
+                        // Ignore lifecycle callback errors
+                    }
+
+                    // Cleanup ViewModel properly
+                    try {
+                        entry.cleanup()
+                    } catch (_: Throwable) {
+                        // Ignore cleanup errors
+                    }
                 }
-                try {
-                    val vm = entry.vm
-                    vm::class.members.firstOrNull { it.name == "dispose" }?.call(vm)
-                } catch (_: Throwable) {
-                }
+
                 updateDebugFlow()
             }
         }
@@ -104,13 +151,20 @@ object SharedViewModelRegistry {
 
     private fun updateDebugFlow() {
         // Snapshot current map into a list
-        val list = map.entries.map { (k, e) ->
-            SharedVmDebugInfo(
-                key = k,
-                vmClass = e.vm::class.java.name,
-                refCount = e.refCount.get(),
-                createdAt = e.createdAt
-            )
+        val list = map.entries.mapNotNull { (k, e) ->
+            val vm = e.getVm()
+            if (vm != null) {
+                SharedVmDebugInfo(
+                    key = k,
+                    vmClass = vm::class.java.name,
+                    refCount = e.refCount.get(),
+                    createdAt = e.createdAt
+                )
+            } else {
+                // VM was GC'd, clean up
+                map.remove(k)
+                null
+            }
         }
         _debugFlow.value = list
     }
