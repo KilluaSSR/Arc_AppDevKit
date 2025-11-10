@@ -1,7 +1,5 @@
 package killua.dev.core.log.domain
 
-import android.os.Build
-import androidx.annotation.RequiresApi
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
@@ -15,26 +13,28 @@ data class LogEntry(
     val packageName: String? = null
 ) {
     val displayTimestamp: String
-        @RequiresApi(Build.VERSION_CODES.O)
+
         get() = timestamp.format(DateTimeFormatter.ofPattern("MM-dd HH:mm:ss.SSS"))
 
     val priority: String
         get() = level.priority
 
     val fullLog: String
-        @RequiresApi(Build.VERSION_CODES.O)
+
         get() = "$displayTimestamp $priority/$tag($processId): $message"
 
     companion object {
-        @RequiresApi(Build.VERSION_CODES.O)
+
         fun parseFromLogcatLine(line: String): LogEntry? {
             return try {
+                // 匹配 logcat -v time 格式: MM-DD HH:MM:SS.mmm I/TAG(PID): message
+                // 或者 MM-DD HH:MM:SS.mmm I/TAG( PID): message (带空格)
                 val regex = """^(\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\.\d{3})\s+([VDIWEA])/(.+?)\(\s*(\d+)\):\s+(.*)$""".toRegex()
                 val match = regex.find(line) ?: return null
 
                 val (timestamp, priority, tag, processId, message) = match.destructured
 
-                              val currentYear = java.time.Year.now().value
+                val currentYear = java.time.Year.now().value
                 val dateTime = LocalDateTime.parse(
                     "$currentYear-$timestamp",
                     DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS")

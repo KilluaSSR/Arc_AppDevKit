@@ -1,28 +1,19 @@
 package killua.dev.core.log.repository
 
 import android.content.Context
-import android.os.Build
-import androidx.annotation.RequiresApi
 import killua.dev.core.log.domain.LogEntry
 import killua.dev.core.log.domain.LogExportFormat
 import killua.dev.core.log.domain.LogFilter
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import java.io.BufferedReader
 import java.io.File
-import java.io.InputStreamReader
 
-@RequiresApi(Build.VERSION_CODES.O)
 class LogcatRepository(
     private val context: Context
 ) : LogRepository {
@@ -30,12 +21,7 @@ class LogcatRepository(
     private val _logs = MutableStateFlow<List<LogEntry>>(emptyList())
     private val _logCount = MutableStateFlow(0)
     private val mutex = Mutex()
-    private var captureJob: Job? = null
-    private var process: Process? = null
-    private val scope = CoroutineScope(Dispatchers.IO)
     private val maxLogs = 10000
-
-    private val packageName = context.packageName
 
     override fun getLogs(filter: LogFilter): Flow<List<LogEntry>> {
         return _logs.asStateFlow().map { logs ->
@@ -72,42 +58,17 @@ class LogcatRepository(
 
     override fun getLogCount(): Flow<Int> = _logCount.asStateFlow()
 
-    fun startCapture(minPriority: String = "V") {
-        if (captureJob?.isActive == true) return
 
-        captureJob = scope.launch {
-            try {
-                val command = buildList {
-                    add("logcat")
-                    add("-v")
-                    add("time")
-                    add("--pid=${android.os.Process.myPid()}")
-                    add("*:$minPriority")
-                }
-
-                process = Runtime.getRuntime().exec(command.toTypedArray())
-                val reader = BufferedReader(InputStreamReader(process!!.inputStream))
-
-                while (isActive) {
-                    val line = reader.readLine() ?: break
-                    parseAndAddLog(line)
-                }
-            } catch (e: Exception) {
-                kotlinx.coroutines.delay(1000)
-            }
-        }
+    suspend fun addLogEntry(logEntry: LogEntry) = mutex.withLock {
+        addLogEntryInternal(logEntry)
     }
-
-    fun stopCapture() {
-        captureJob?.cancel()
-        captureJob = null
-        process?.destroy()
-        process = null
-    }
-
-    private suspend fun parseAndAddLog(line: String) = mutex.withLock {
-        val logEntry = LogEntry.parseFromLogcatLine(line) ?: return@withLock
-
+    
+    /**
+     * 同步获取当前日志数量 (用于调试)
+     */
+    fun getLogCountSync(): Int = _logs.value.size
+    
+    private fun addLogEntryInternal(logEntry: LogEntry) {
         val currentLogs = _logs.value.toMutableList()
         currentLogs.add(logEntry)
 
@@ -168,6 +129,4 @@ class LogcatRepository(
         }
         file.writeText(htmlContent)
     }
-
-    fun isCapturing(): Boolean = captureJob?.isActive == true
 }

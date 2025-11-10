@@ -27,14 +27,15 @@ interface BrowserUIEffect : UIEffect {
 
 @HiltViewModel
 class BrowserViewModel @Inject constructor(
-    val platformConfig: PlatformConfig,
-    private val cookieRepository: CookieRepository
+    @javax.inject.Named("platformConfig") val platformConfig: PlatformConfig?,
+    @javax.inject.Named("cookieRepository") private val cookieRepository: CookieRepository?
 ) : BaseViewModel<BrowserUIIntent, BrowserUIState, BrowserUIEffect>(BrowserUIState()) {
     private val _effectFlow = MutableSharedFlow<BrowserUIEffect>()
     val effectFlow: SharedFlow<BrowserUIEffect> = _effectFlow.asSharedFlow()
     init {
        viewModelScope.launch {
-           updateState { it.copy(url = platformConfig.loginUrl, isLoading = false) }
+           val url = platformConfig?.loginUrl ?: ""
+           updateState { it.copy(url = url, isLoading = false) }
        }
     }
 
@@ -47,7 +48,7 @@ class BrowserViewModel @Inject constructor(
     }
 
     private suspend fun handleCookieCheck(cookies: String?) {
-        if (cookies == null) return
+        if (cookies == null || platformConfig == null || cookieRepository == null) return
 
         for (group in platformConfig.cookieRuleGroups) {
             val matchResults = mutableListOf<CookieInfo>()

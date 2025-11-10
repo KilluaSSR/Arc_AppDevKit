@@ -5,6 +5,7 @@ plugins {
     alias(libs.plugins.hilt.android)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.kotlin.serialization)
+    `maven-publish`
 }
 
 android {
@@ -33,56 +34,76 @@ android {
     }
     kotlinOptions {
         jvmTarget = "11"
+        languageVersion = "1.9"
+        apiVersion = "1.9"
     }
     buildFeatures {
         compose = true
     }
 }
 
-dependencies {
-    implementation(libs.androidx.startup.runtime)
-    implementation(libs.androidx.work.runtime.ktx)
-    implementation(libs.androidx.work.multiprocess)
-    implementation(libs.logcat)
+afterEvaluate {
+    publishing {
+        publications {
+            create<MavenPublication>("maven") {
+                groupId = "killua.dev"
+                artifactId = "arc_appdevkit"
+                version = "1.1"
 
-    implementation(libs.hilt.android)
-    implementation(libs.androidx.hilt.common)
-    implementation(libs.androidx.lifecycle.runtime.ktx)
-    implementation(libs.androidx.activity.compose)
+                from(components.getByName("release"))
+            }
+        }
+
+        repositories{
+            mavenLocal()
+        }
+    }
+}
+
+dependencies {
+    api(libs.androidx.startup.runtime)
+    api(libs.androidx.work.runtime.ktx)
+    api(libs.androidx.work.multiprocess)
+    api(libs.logcat)
+
+    api(libs.hilt.android)
+    api(libs.androidx.hilt.common)
+    api(libs.androidx.hilt.navigation.compose)
+    api(libs.androidx.hilt.work)
+    
+    ksp(libs.hilt.android.compiler)
+    ksp(libs.hilt.compiler)
+    
+    api(libs.androidx.lifecycle.runtime.ktx)
+    api(libs.androidx.activity.compose)
+    
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
-    ksp(libs.hilt.android.compiler)
-    implementation(libs.androidx.hilt.navigation.compose)
-    implementation(libs.androidx.hilt.work)
-    ksp(libs.hilt.compiler)
 
-    implementation(libs.androidx.navigation.compose)
-    implementation(libs.androidx.material.icons.extended)
-    implementation(libs.coil.compose)
-    implementation(libs.ktor.client.core)
-    implementation(libs.ktor.client.android)
-    implementation(libs.ktor.client.logging)
-    implementation(libs.ktor.client.android)
-    implementation(libs.ktor.client.content.negotiation)
-    implementation(libs.ktor.serialization.kotlinx.json)
-    implementation(libs.ktor.client.websockets)
-    implementation(libs.gson)
-    implementation(libs.kotlinx.serialization.json)
-    implementation(libs.kotlinx.serialization.json.v151)
-    implementation(libs.ktor.serialization.kotlinx.json)
-    implementation(libs.androidx.datastore.preferences)
-    implementation(libs.kotlinx.coroutines.core)
-    implementation(libs.kotlinx.serialization.json)
-    implementation(libs.kotlinx.serialization.json.v151)
-    implementation(libs.ktor.serialization.kotlinx.json)
-    implementation(platform(libs.androidx.compose.bom))
-    implementation(libs.androidx.ui)
-    implementation(libs.androidx.ui.graphics)
-    implementation(libs.androidx.ui.tooling.preview)
-    implementation(libs.androidx.material3)
-    implementation(libs.material)
-    implementation(libs.androidx.material3.android)
+    api(libs.androidx.navigation.compose)
+    api(libs.androidx.material.icons.extended)
+    api(libs.coil.compose)
+    
+    api(libs.ktor.client.core)
+    api(libs.ktor.client.android)
+    api(libs.ktor.client.logging)
+    api(libs.ktor.client.content.negotiation)
+    api(libs.ktor.serialization.kotlinx.json)
+    api(libs.ktor.client.websockets)
+    
+    api(libs.gson)
+    api(libs.kotlinx.serialization.json)
+    api(libs.androidx.datastore.preferences)
+    api(libs.kotlinx.coroutines.core)
+    
+    api(platform(libs.androidx.compose.bom))
+    api(libs.androidx.ui)
+    api(libs.androidx.ui.graphics)
+    api(libs.androidx.ui.tooling.preview)
+    api(libs.androidx.material3)
+    api(libs.material)
+    api(libs.androidx.material3.android)
 
 }

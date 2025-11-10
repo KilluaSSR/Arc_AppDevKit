@@ -6,7 +6,6 @@ import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
-import killua.dev.core.log.domain.LogLevel
 import logcat.AndroidLogcatLogger
 import logcat.LogPriority
 import logcat.LogcatLogger
@@ -17,22 +16,12 @@ interface LoggerInitializerEntryPoint {
     fun logcatCaptureService(): LogcatCaptureService
 }
 
-/**
- * 日志初始化
- * 提供安全的生产环境日志管理
- */
 object LoggerInitializer {
 
     @Volatile
     private var isInitialized = false
     private val initializationLock = Any()
 
-    /**
-     * 安全初始化日志系统
-     *
-     * @param application Application 实例
-     * @param config 日志配置
-     */
     fun initialize(
         application: Application,
         config: LogConfig = LogConfig.DEFAULT
@@ -51,7 +40,6 @@ object LoggerInitializer {
 
                 isInitialized = true
             } catch (e: Exception) {
-                // 初始化失败时至少保证系统日志可用
                 AndroidLogcatLogger.installOnDebuggableApp(application, LogPriority.ERROR)
             }
         }
@@ -70,8 +58,12 @@ object LoggerInitializer {
         if (shouldInstall && !LogcatLogger.isInstalled) {
             LogcatLogger.install()
             LogcatLogger.loggers += AndroidLogcatLogger(config.minPriority)
-        } else if (shouldInstall) {
-            AndroidLogcatLogger.installOnDebuggableApp(application, config.minPriority)
+            android.util.Log.i("LoggerInitializer", "LogcatLogger installed with AndroidLogcatLogger")
+        } else if (shouldInstall && LogcatLogger.isInstalled) {
+            if (LogcatLogger.loggers.none { it is AndroidLogcatLogger }) {
+                LogcatLogger.loggers += AndroidLogcatLogger(config.minPriority)
+                android.util.Log.i("LoggerInitializer", "AndroidLogcatLogger added to existing LogcatLogger")
+            }
         }
     }
 
@@ -85,13 +77,9 @@ object LoggerInitializer {
                 LoggerInitializerEntryPoint::class.java
             )
             entryPoint.logcatCaptureService().installLogger()
-
-          if (config.autoStartCapture) {
-                val priorityString = LogLevel.fromLogPriority(config.minPriority).priority
-                entryPoint.logcatCaptureService().startCapture(priorityString)
-            }
+            android.util.Log.i("LoggerInitializer", "In-app log viewer initialized successfully")
         } catch (e: Exception) {
-            // Hilt未初始化时的备用方案
+            android.util.Log.w("LoggerInitializer", "Failed to get service from Hilt, using proxy", e)
             LogcatCaptureServiceProxy.getInstance(application).installLogger()
         }
     }
@@ -100,21 +88,9 @@ object LoggerInitializer {
         return application.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0
     }
 
-    /**
-     * 获取初始化状态
-     */
+
     fun isInitialized(): Boolean = isInitialized
 
-    /**
-     * 安全停止日志捕获
-     */
-    fun safeStopCapture(context: Context) {
-        try {
-            LogcatCaptureServiceProxy.getInstance(context).stopCapture()
-        } catch (e: Exception) {
-            // 忽略停止失败
-        }
-    }
 }
 
 /**
@@ -129,7 +105,9 @@ data class LogConfig(
     val enableExport: Boolean = true
 ) {
     companion object {
-        val DEFAULT = LogConfig()
+        val DEFAULT = LogConfig(
+            autoStartCapture = true
+        )
         val DEBUG = LogConfig(
             enableInRelease = true,
             autoStartCapture = true
@@ -144,7 +122,7 @@ data class LogConfig(
             minPriority = LogPriority.INFO,
             enableInAppViewer = true,
             enableInRelease = false,
-            autoStartCapture = false
+            autoStartCapture = true
         )
     }
 }

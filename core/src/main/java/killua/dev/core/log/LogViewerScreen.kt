@@ -1,7 +1,5 @@
 package killua.dev.core.log
 
-import android.os.Build
-import androidx.annotation.RequiresApi
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -59,6 +57,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -68,20 +67,20 @@ import killua.dev.core.log.domain.LogFilter
 import killua.dev.core.log.domain.LogLevel
 import kotlinx.coroutines.launch
 
-@RequiresApi(Build.VERSION_CODES.O)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LogViewerScreen(
     modifier: Modifier = Modifier,
-    onBack: () -> Unit = {},
-    logService: LogcatCaptureService? = null
+    onBack: () -> Unit = {}
 ) {
-    val logs by (logService?.logs ?: kotlinx.coroutines.flow.MutableStateFlow(emptyList<LogEntry>())).collectAsState()
+    val context = LocalContext.current
+    val logService = context.let { LogcatCaptureServiceProxy.getInstance(it) }
+    val logs by logService.logs.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     var showFilterDialog by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
     var selectedPriority by remember { mutableStateOf(LogLevel.ALL) }
-    var autoScroll by remember { mutableStateOf(true) }
+    var autoScroll by remember { mutableStateOf(false) }  // UI界面默认暂停自动滚动
     var expandedLog by remember { mutableStateOf<LogEntry?>(null) }
     var isExporting by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -100,21 +99,16 @@ fun LogViewerScreen(
   
     val listState = rememberLazyListState()
 
-    // 自动滚动到底部
     LaunchedEffect(filteredLogs.size, autoScroll) {
         if (autoScroll && filteredLogs.isNotEmpty()) {
             listState.animateScrollToItem(filteredLogs.size - 1)
         }
     }
 
-    LaunchedEffect(Unit) {
-        logService?.startCapture()
-    }
     
     DisposableEffect(Unit) {
         onDispose {
-            // 可选: 在退出时停止捕获,或者保持运行
-            // LogcatCaptureService.stopCapture()
+            // 退出 UI 时保持日志捕获运行,继续在后台记录
         }
     }
     
@@ -347,7 +341,6 @@ fun LogViewerScreen(
         }
     }
 }
-@RequiresApi(Build.VERSION_CODES.O)
 @Composable
 fun LogItem(
     log: LogEntry,

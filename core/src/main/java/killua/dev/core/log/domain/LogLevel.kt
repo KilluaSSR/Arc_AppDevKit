@@ -31,7 +31,7 @@ enum class LogLevel(val priority: String, val value: Int, val displayName: Strin
 
     companion object {
         fun fromPriority(priority: String): LogLevel =
-            values().find { it.priority == priority } ?: VERBOSE
+            LogLevel.entries.find { it.priority == priority } ?: VERBOSE
 
         fun fromLogPriority(logPriority: LogPriority): LogLevel = when (logPriority) {
             LogPriority.VERBOSE -> VERBOSE

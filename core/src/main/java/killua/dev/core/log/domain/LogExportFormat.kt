@@ -8,6 +8,6 @@ enum class LogExportFormat(val extension: String, val mimeType: String) {
 
     companion object {
         fun fromExtension(extension: String): LogExportFormat? =
-            values().find { it.extension.equals(extension, ignoreCase = true) }
+            LogExportFormat.entries.find { it.extension.equals(extension, ignoreCase = true) }
     }
 }

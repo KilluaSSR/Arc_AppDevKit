@@ -59,7 +59,7 @@ fun BrowserPage(
             viewModel.emitIntentOnIO(BrowserUIIntent.OnCookieChanged(cookies))
         },
         onNavigateUp = onNavigateUp,
-        platformConfig = viewModel.platformConfig
+        platformConfig = viewModel.platformConfig ?: return
     )
 }
 
