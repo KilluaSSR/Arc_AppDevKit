@@ -1,7 +1,6 @@
 package killua.dev.core.log
 
 import android.content.Context
-import android.os.Build
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors

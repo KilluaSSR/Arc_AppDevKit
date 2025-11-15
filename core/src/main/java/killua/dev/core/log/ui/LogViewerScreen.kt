@@ -1,4 +1,4 @@
-package killua.dev.core.log
+package killua.dev.core.log.ui
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -57,35 +57,35 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import killua.dev.core.log.LogcatCaptureService
 import killua.dev.core.log.domain.LogEntry
 import killua.dev.core.log.domain.LogExportFormat
 import killua.dev.core.log.domain.LogFilter
 import killua.dev.core.log.domain.LogLevel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LogViewerScreen(
     modifier: Modifier = Modifier,
-    onBack: () -> Unit = {}
+    onBack: () -> Unit = {},
+    logService: LogcatCaptureService
 ) {
-    val context = LocalContext.current
-    val logService = context.let { LogcatCaptureServiceProxy.getInstance(it) }
     val logs by logService.logs.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
     var showFilterDialog by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
     var selectedPriority by remember { mutableStateOf(LogLevel.ALL) }
-    var autoScroll by remember { mutableStateOf(false) }  // UI界面默认暂停自动滚动
+    var autoScroll by remember { mutableStateOf(false) }
     var expandedLog by remember { mutableStateOf<LogEntry?>(null) }
     var isExporting by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
-  
+
     val currentFilter = remember(searchQuery, selectedPriority) {
         LogFilter(
             query = searchQuery,
@@ -96,7 +96,7 @@ fun LogViewerScreen(
     val filteredLogs = remember(logs, currentFilter) {
         logs.filter { currentFilter.matches(it) }
     }
-  
+
     val listState = rememberLazyListState()
 
     LaunchedEffect(filteredLogs.size, autoScroll) {
@@ -105,17 +105,17 @@ fun LogViewerScreen(
         }
     }
 
-    
+
     DisposableEffect(Unit) {
         onDispose {
             // 退出 UI 时保持日志捕获运行,继续在后台记录
         }
     }
-    
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { 
+                title = {
                     Column {
                         Text("日志查看器")
                         Text(
@@ -140,7 +140,7 @@ fun LogViewerScreen(
                             tint = if (autoScroll) MaterialTheme.colorScheme.primary else Color.Gray
                         )
                     }
-                    
+
                     // 过滤器
                     IconButton(onClick = { showFilterDialog = true }) {
                         Badge(
@@ -150,7 +150,7 @@ fun LogViewerScreen(
                             Icon(Icons.Default.FilterList, "过滤")
                         }
                     }
-                    
+
                     // 导出日志
                     IconButton(
                         onClick = { showExportDialog = true },
@@ -196,7 +196,7 @@ fun LogViewerScreen(
                 },
                 singleLine = true
             )
-            
+
             // 过滤提示
             if (selectedPriority != LogLevel.ALL || searchQuery.isNotEmpty()) {
                 Surface(
@@ -235,7 +235,7 @@ fun LogViewerScreen(
                     }
                 }
             }
-            
+
             // 空状态
             if (filteredLogs.isEmpty()) {
                 Box(
@@ -297,7 +297,7 @@ fun LogViewerScreen(
                 }
             }
         }
-          SnackbarHost(hostState = snackbarHostState)
+        SnackbarHost(hostState = snackbarHostState)
 
         // 过滤对话框
         if (showFilterDialog) {
@@ -341,6 +341,7 @@ fun LogViewerScreen(
         }
     }
 }
+
 @Composable
 fun LogItem(
     log: LogEntry,
